@@ -14,6 +14,7 @@ def Closure(string, mark_begin, mark_end):
     m1 = [m.span()[0] for m in re.finditer(
         r'%s' % mark_begin\
             .replace('*', '\*')\
+            .replace('-', '\-')\
             .replace('{', '\{')\
             .replace('}', '\}')\
             .replace('[', '\[')\
@@ -23,6 +24,7 @@ def Closure(string, mark_begin, mark_end):
     m2 = [m.span()[0] for m in re.finditer(
         r'%s' % mark_end\
             .replace('*', '\*')\
+            .replace('-', '\-')\
             .replace('{', '\{')\
             .replace('}', '\}')\
             .replace('[', '\[')\
@@ -81,33 +83,35 @@ def Closure(string, mark_begin, mark_end):
         candidates.append(candidate)
     return candidates, _candidates
 
+def SortedClosure((candidates, _candidates)):
+    # Sort by size reversely
+    indexes = sorted([(i, j[1]-j[0]) for i, j in enumerate(_candidates)], key=lambda i:i[1], reverse=True)
+    candidates_sorted = []
+    _candidates_sorted = []
+    for i, j in indexes:
+        candidates_sorted.append(candidates[i])
+        _candidates_sorted.append(_candidates[i])
+    return candidates_sorted, _candidates_sorted
+
 #
 ## Cleaner
 #
 def Clean(string):
-    entries, _ = Closure(string, '[[', ']]')
-    for entry in entries:
-        string = string.replace('[[' + entry + ']]', ' ' + entry.split('|')[0])
+    pattern = re.compile(r"(\[\[)|(\]\])|(''')|(&lt;.*?&gt;)", re.DOTALL)
+    string = pattern.sub('', string)
 
-    entries, _ = Closure(string, '{{', '}}')
-    for entry in entries:
-        string = string.replace('{{' + entry + '}}', ' ' + entry.split('|')[0])
+    if '{{' in string:
+        entries, _ = SortedClosure(Closure(string, '{{', '}}'))
+        for entry in entries:
+            string = string.replace('{{' + entry + '}}', '')
 
-    entries, _ = Closure(string, '-{', '}-')
-    for entry in entries:
-        string = string.replace('-{' + entry + '}-', ' ' + entry.split(';')[0].split(':')[1])
-
-    entries, _ = Closure(string, '[', ']')
-    for entry in entries:
-        string = string.replace('[' + entry + ']', ' ' + entry.split(' ', 1)[-1])
-    
-    string = re.sub(r'(&lt;br /&gt;)', '\n', string)
-    string = re.sub(r"(''')|('')|(&lt;.*?&gt;)", '', string)
-
-    entries = re.findall(r'\[(.+)', string)
-    for entry in entries:
-        string = string.replace('[' + entry, ' ' + entry.split(' ', 1)[-1])
-
+    if '-{' in string:
+        entries, _ = SortedClosure(Closure(string, '-{', '}-'))
+        for entry in entries:
+            try:
+                string = string.replace('-{' + entry + '}-', entry.split(';')[0].split(':')[1].strip())
+            except:
+                string = string.replace('-{' + entry + '}-', entry)
     return string
 
 #
@@ -153,15 +157,25 @@ def InfoBox(page):
     # Parse infobox string to object
     infobox = []
     if candidate:
-        # Clean candidate
-        candidate = Clean(candidate)
+        def parse_infobox(string):
+            splitter = '|||'
+            entries, _ = Closure(string, '{{', '}}')
+            for entry in entries:
+                string = string.replace('{{' + entry + '}}', '{{' + entry.replace('|', '$$$') + '}}')
 
-        kvstrings = candidate.split('|')
+            entries, _ = Closure(string, '[[', ']]')
+            for entry in entries:
+                string = string.replace('[[' + entry + ']]', '[[' + entry.replace('|', '$$$') + ']]')
+
+            return string.replace('|', splitter).replace('$$$', '|'), splitter
+        candidate, splitter = parse_infobox(candidate)
+
+        kvstrings = candidate.split(splitter)
         for kvstring in kvstrings:
-            if '=' not in kvstring:
+            if '=' not in kvstring or (kvstring.lstrip() and kvstring.lstrip()[0] == '{'):
                 continue # this line doest have key value
             key, value = kvstring.split('=', 1)
-            infobox.append((key.strip(), value.strip().replace('\n', ';')))
+            infobox.append((key.strip(), value.strip()))
     return infobox
 
 #
@@ -213,14 +227,36 @@ def Entity(text):
     return ''
 
 class WikipediaExtractor:
-    def __init__(self, wikidumps_file, infobox_filter=True):
-        self.file_handle = open(wikidumps_file, 'r')
+    def __init__(self, *args, **kwargs):
+        for dictionary in args:
+            for key in dictionary:
+                setattr(self, key, dictionary[key])        
+        for key in kwargs:
+            setattr(self, key, kwargs[key])
+
+        if not hasattr(self, 'file'):
+            print 'Need argument: file'
+            exit(1)
+
+        if hasattr(self, 'min_infobox'):
+            try:
+                int(self.min_infobox)
+            except:
+                print 'Argument min_infobox must be integer'
+                exit(1)
+
+        if hasattr(self, 'clean'):
+            if type(self.clean) != bool:
+                print 'Argument clean must be bool'
+                exit(1)
+
+        self.file_handle = open(self.file, 'r')
 
         flag = False
         page = []
         count = 0
 
-        for i in range(10000):
+        for i in range(1000000):
             line = self.file_handle.readline()
 
             if line.lstrip().startswith('<page>'):
@@ -244,20 +280,20 @@ class WikipediaExtractor:
                 category = Category(text)
                 entity = Entity(text)
 
-                is_valid_infobox = False
-                if infobox_filter:
-                    validnum = len([value for key, value in infobox if 'zh-' not in value])
-                    is_valid_infobox = validnum > len(infobox) / 2
-
-                if not infobox_filter or is_valid_infobox:
-                    print 'Count:', count
-                    print 'Title:', title
-                    print 'InfoBox:', infobox
-                    print 'Content:'
-                    print content
+                print 'Count:', count
+                print 'Title:', title
+                """
+                print 'Content:'
+                print content
+                """
+                if len(infobox) >= self.min_infobox:
+                    print 'InfoBox:'
                     for key, value in infobox:
-                        print '  %s = %s' % (key, value)
-                    print '-------------------------'
+                        if self.clean:
+                            print '  %s = %s' % (Clean(key), Clean(value))
+                        else:
+                            print '  %s = %s' % (key, value)
+                print '-------------------------'
                 continue
 
             if flag:
@@ -282,4 +318,8 @@ class WikipediaExtractor:
 
 if __name__ == '__main__':
     filename = sys.argv[1]
-    WikipediaExtractor(filename)
+    WikipediaExtractor(
+        file=filename,
+        min_infobox=2,
+        clean=False
+    )
