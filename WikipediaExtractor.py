@@ -160,7 +160,10 @@ def Title(page):
 def Text(page):
     pattern = re.compile(r'<text.*?>(.*?)</text', re.DOTALL)
     matches = pattern.search(page)
-    return matches.group(1)
+    if matches:
+        return matches.group(1)
+    else:
+        return ''
 
 #
 ## Infobox
