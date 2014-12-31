@@ -96,7 +96,7 @@ def SortedClosure((candidates, _candidates)):
 #
 ## Cleaner
 #
-def Clean(string):
+def CleanedInfobox(string):
     pattern = re.compile(r"(\[\[)|(\]\])|(''')|(&lt;.*?&gt;)", re.DOTALL)
     string = pattern.sub('', string)
 
@@ -113,6 +113,42 @@ def Clean(string):
             except:
                 string = string.replace('-{' + entry + '}-', entry)
     return string
+
+def CleanedText(string):
+    pattern = re.compile(r"(''')|(&lt;.*?&gt;)|(^\s?\*\s?)", re.DOTALL|re.MULTILINE)
+    string = pattern.sub('', string)
+
+    if '{{' in string:
+        entries, _ = SortedClosure(Closure(string, '{{', '}}'))
+        for entry in entries:
+            string = string.replace('{{' + entry + '}}', '')
+
+    if '{' in string:
+        entries, _ = SortedClosure(Closure(string, '{', '}'))
+        for entry in entries:
+            string = string.replace('{' + entry + '}', '')
+
+    if '[[' in string:
+        entries, _ = SortedClosure(Closure(string, '[[', ']]'))
+        for entry in entries:
+            string = string.replace('[[' + entry + ']]', entry.split('|')[0])
+
+    if '[' in string:
+        entries, _ = SortedClosure(Closure(string, '[', ']'))
+        for entry in entries:
+            string = string.replace('[' + entry + ']', '')
+
+    if '===' in string:
+        entries, _ = SortedClosure(Closure(string, '=== ', ' ==='))
+        for entry in entries:
+            string = string.replace('=== ' + entry + ' ===', entry)
+
+    if '==' in string:
+        entries, _ = SortedClosure(Closure(string, '== ', ' =='))
+        for entry in entries:
+            string = string.replace('== ' + entry + ' ==', entry)
+
+    return re.sub(r'\n{2,}', '\n\n', string)
 
 #
 ## Id
@@ -136,7 +172,6 @@ def Text(page):
     matches = pattern.search(page)
     return matches.group(1)
 
-#
 #
 ## Infobox
 #
@@ -179,46 +214,18 @@ def InfoBox(page):
     return infobox
 
 #
-## Content
+## Abstract
 #
-def Content(text):
-    INFOBOX_BEGIN = '{{'
-    INFOBOX_END = '}}'
-
-    # Extract infobox candidates
-    _, indexes = Closure(text, INFOBOX_BEGIN, INFOBOX_END)
-
-    # Exclude infobox
-    new_indexes = []
-    if indexes:
-        indexes = reduce(lambda x, y: x+y, indexes)
-
-        if indexes[0] != 0:
-            indexes = [0] + indexes
-        else:
-            del indexes[0]
-
-        if (len(indexes) + 1) % 2:
-            indexes.append(indexes[-1]+1)
-        indexes.append(-1)
-
-        i = 0
-        while i < len(indexes):
-            if indexes[i] != indexes[i+1]:
-                new_indexes.append((indexes[i], indexes[i+1]))
-            i += 2
-
-    # filter content
-    content = []
-    for begin, end in new_indexes:
-        content.append(text[begin+len(INFOBOX_BEGIN):end])
-    return ''.join(content)
+def Abstract(text):
+    return text.split('\n')[0]
 
 #
 ## Category
 #
 def Category(text):
-    return ''
+    matches = re.findall(r'\[\[Category:(.*?)\]\]', text) 
+    category = [m for m in matches]
+    return category
 
 #
 ## Entity
@@ -245,9 +252,14 @@ class WikipediaExtractor:
                 print 'Argument min_infobox must be integer'
                 exit(1)
 
-        if hasattr(self, 'clean'):
-            if type(self.clean) != bool:
-                print 'Argument clean must be bool'
+        if hasattr(self, 'clean_infobox'):
+            if type(self.clean_infobox) != bool:
+                print 'Argument clean_infobox must be bool'
+                exit(1)
+
+        if hasattr(self, 'clean_text'):
+            if type(self.clean_text) != bool:
+                print 'Argument clean_text must be bool'
                 exit(1)
 
         self.file_handle = open(self.file, 'r')
@@ -256,7 +268,7 @@ class WikipediaExtractor:
         page = []
         count = 0
 
-        for i in range(1000000):
+        for i in range(10000):
             line = self.file_handle.readline()
 
             if line.lstrip().startswith('<page>'):
@@ -273,27 +285,31 @@ class WikipediaExtractor:
 
                 id = Id(page)
                 title = Title(page)
-                text = Text(page)
+                text = CleanedText(Text(page)) if self.clean_text else Text(page)
                 infobox = InfoBox(text)
-                content = Content(text)
-
+                abstract = Abstract(text)
                 category = Category(text)
                 entity = Entity(text)
 
-                print 'Count:', count
-                print 'Title:', title
-                """
-                print 'Content:'
-                print content
-                """
+                print '@@ENTRY'
+                print '@@Id'
+                print id
+                print '@@Title'
+                print title
+                print '@@Text'
+                print  text
+                print '@@InfoBox'
                 if len(infobox) >= self.min_infobox:
-                    print 'InfoBox:'
                     for key, value in infobox:
-                        if self.clean:
-                            print '  %s = %s' % (Clean(key), Clean(value))
+                        if self.clean_infobox:
+                            print '%s:%s' % (CleanedInfobox(key), CleanedInfobox(value))
                         else:
-                            print '  %s = %s' % (key, value)
-                print '-------------------------'
+                            print '%s:%s' % (key, value)
+                print '@@Abstract'
+                print abstract
+                print '@@Category'
+                print ';'.join(category)
+                print '@@ENDENTRY'
                 continue
 
             if flag:
@@ -321,5 +337,6 @@ if __name__ == '__main__':
     WikipediaExtractor(
         file=filename,
         min_infobox=2,
-        clean=False
+        clean_infobox=False,
+        clean_text=True
     )
