@@ -284,8 +284,8 @@ class WikipediaExtractor:
                 text = CleanedText(Text(page)) if self.clean_text else Text(page)
                 _infobox = InfoBox(text)
                 infobox = []
-                if len(infobox) >= self.min_infobox:
-                    for key, value in infobox:
+                if len(_infobox) >= self.min_infobox:
+                    for key, value in _infobox:
                         if self.clean_infobox:
                             infobox.append((CleanedInfobox(key), CleanedInfobox(value)))
                         else:
