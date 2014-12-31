@@ -2,6 +2,7 @@
 
 import sys
 import re
+import json
 
 #
 ## Closure
@@ -115,7 +116,7 @@ def CleanedInfobox(string):
     return string
 
 def CleanedText(string):
-    pattern = re.compile(r"(''')|(&lt;.*?&gt;)|(^\s?\*\s?)", re.DOTALL|re.MULTILINE)
+    pattern = re.compile(r"('{2,3})|(&lt;.*?&gt;)|(^\s?=+\s?)|(\s?=+\s?$)", re.DOTALL|re.MULTILINE)
     string = pattern.sub('', string)
 
     if '{{' in string:
@@ -137,17 +138,6 @@ def CleanedText(string):
         entries, _ = SortedClosure(Closure(string, '[', ']'))
         for entry in entries:
             string = string.replace('[' + entry + ']', '')
-
-    if '===' in string:
-        entries, _ = SortedClosure(Closure(string, '=== ', ' ==='))
-        for entry in entries:
-            string = string.replace('=== ' + entry + ' ===', entry)
-
-    if '==' in string:
-        entries, _ = SortedClosure(Closure(string, '== ', ' =='))
-        for entry in entries:
-            string = string.replace('== ' + entry + ' ==', entry)
-
     return re.sub(r'\n{2,}', '\n\n', string)
 
 #
@@ -217,21 +207,23 @@ def InfoBox(page):
 ## Abstract
 #
 def Abstract(text):
-    return text.split('\n')[0]
+    return text.lstrip().split('\n')[0]
 
 #
 ## Category
 #
-def Category(text):
-    matches = re.findall(r'\[\[Category:(.*?)\]\]', text) 
-    category = [m for m in matches]
+def Category(page):
+    matches = re.findall(r'\[\[Category:(.*?)\]\]', page)
+    category = [m.split('|')[0] for m in matches]
     return category
 
 #
 ## Entity
 #
-def Entity(text):
-    return ''
+def Entity(page):
+    matches = re.findall(r'\[\[(.*?)\]\]', page)
+    entity = reduce(lambda x,y: x+y, [m.split('|') for m in matches]) if matches else []
+    return entity
 
 class WikipediaExtractor:
     def __init__(self, *args, **kwargs):
@@ -264,12 +256,14 @@ class WikipediaExtractor:
 
         self.file_handle = open(self.file, 'r')
 
+    def extract(self):
         flag = False
         page = []
-        count = 0
 
-        for i in range(10000):
+        while True:
             line = self.file_handle.readline()
+            if not line:
+                break
 
             if line.lstrip().startswith('<page>'):
                 page = [line]
@@ -280,63 +274,61 @@ class WikipediaExtractor:
                 page.append(line)
                 flag = False
 
-                count += 1
                 page = ''.join(page)
 
                 id = Id(page)
                 title = Title(page)
                 text = CleanedText(Text(page)) if self.clean_text else Text(page)
-                infobox = InfoBox(text)
-                abstract = Abstract(text)
-                category = Category(text)
-                entity = Entity(text)
-
-                print '@@ENTRY'
-                print '@@Id'
-                print id
-                print '@@Title'
-                print title
-                print '@@Text'
-                print  text
-                print '@@InfoBox'
+                _infobox = InfoBox(text)
+                infobox = []
                 if len(infobox) >= self.min_infobox:
                     for key, value in infobox:
                         if self.clean_infobox:
-                            print '%s:%s' % (CleanedInfobox(key), CleanedInfobox(value))
+                            infobox.append((CleanedInfobox(key), CleanedInfobox(value)))
                         else:
-                            print '%s:%s' % (key, value)
-                print '@@Abstract'
-                print abstract
-                print '@@Category'
-                print ';'.join(category)
-                print '@@ENDENTRY'
+                            infobox.append((key, value))
+                abstract = Abstract(text if self.clean_text else CleanedText(text))
+                category = Category(page)
+                entity = Entity(page)
+
+                yield {
+                    'id': id,
+                    'title': title,
+                    'text': text,
+                    'infobox': infobox,
+                    'abstract': abstract,
+                    'category': category,
+                    'entity': entity
+                }
                 continue
 
             if flag:
                 page.append(line)
                 continue
 
-
     def __del__(self):
         self.file_handle.close()
 
-    def _extract_title(self):
-        pass
-
-    def _extract_string(self):
-        pass
-
-    def _extract_introduction(self):
-        pass
-
-    def _extract_category(self):
-        pass
-
 if __name__ == '__main__':
-    filename = sys.argv[1]
-    WikipediaExtractor(
-        file=filename,
+    if len(sys.argv) != 3:
+        print 'Usage:'
+        print '  python WikipediaExtractor.py [wikixmlfile] [dumpsfile]'
+        print ''
+        exit(1)
+
+    inputfile = sys.argv[1]
+    outputfile = sys.argv[2]
+    we = WikipediaExtractor(
+        file=inputfile,
         min_infobox=2,
         clean_infobox=False,
         clean_text=True
     )
+    iteration = we.extract()
+
+    with open(outputfile, 'w') as f:
+        while True:
+            try:
+                f.write(json.dumps(iteration.next()) + '\n')
+            except StopIteration:
+                break
