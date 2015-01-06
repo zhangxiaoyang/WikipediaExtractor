@@ -176,11 +176,11 @@ def InfoBox(page):
     candidates, _ = Closure(page, INFOBOX_BEGIN, INFOBOX_END)
                 
     # Filter valid infobox
-    candidate = None
+    candidate = ''
     for _candidate in candidates:
         if '|' in _candidate and '=' in _candidate:
-            candidate = _candidate
-            break
+            if len(_candidate) > len(candidate):
+                candidate = _candidate
 
     # Parse infobox string to object
     infobox = []
@@ -281,7 +281,7 @@ class WikipediaExtractor:
 
                 id = Id(page)
                 title = Title(page)
-                text = CleanedText(Text(page)) if self.clean_text else Text(page)
+                text = Text(page)
                 _infobox = InfoBox(text)
                 infobox = []
                 if len(_infobox) >= self.min_infobox:
@@ -290,6 +290,7 @@ class WikipediaExtractor:
                             infobox.append((CleanedInfobox(key), CleanedInfobox(value)))
                         else:
                             infobox.append((key, value))
+                text = CleanedText(text) if self.clean_text else text
                 abstract = Abstract(text if self.clean_text else CleanedText(text))
                 category = Category(page)
                 entity = Entity(page)
