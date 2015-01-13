@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# coding: utf-8
 
 import sys
 import re
@@ -173,14 +174,17 @@ def InfoBox(page):
     INFOBOX_END = '}}'
 
     # Extract infobox candidates
-    candidates, _ = Closure(page, INFOBOX_BEGIN, INFOBOX_END)
+    candidates, indexes = Closure(page, INFOBOX_BEGIN, INFOBOX_END)
                 
     # Filter valid infobox
     candidate = ''
-    for _candidate in candidates:
+    index = [0, 0]
+    zipped = zip(candidates, indexes)
+    for _candidate, _index in zipped:
         if '|' in _candidate and '=' in _candidate:
-            if len(_candidate) > len(candidate):
+            if len(_candidate) > len(candidate) and abs(_index[0]-index[1]) < 200:
                 candidate = _candidate
+                index = _index
 
     # Parse infobox string to object
     infobox = []
@@ -240,13 +244,6 @@ class WikipediaExtractor:
             print 'Need argument: file'
             exit(1)
 
-        if hasattr(self, 'min_infobox'):
-            try:
-                int(self.min_infobox)
-            except:
-                print 'Argument min_infobox must be integer'
-                exit(1)
-
         if hasattr(self, 'clean_infobox'):
             if type(self.clean_infobox) != bool:
                 print 'Argument clean_infobox must be bool'
@@ -281,8 +278,11 @@ class WikipediaExtractor:
 
                 id = Id(page)
                 title = Title(page)
+
                 text = Text(page)
-                _infobox = InfoBox(text)
+                cleaned_text = CleanedText(text)
+                infobox = InfoBox(text)
+                """
                 infobox = []
                 if len(_infobox) >= self.min_infobox:
                     for key, value in _infobox:
@@ -290,8 +290,9 @@ class WikipediaExtractor:
                             infobox.append((CleanedInfobox(key), CleanedInfobox(value)))
                         else:
                             infobox.append((key, value))
-                text = CleanedText(text) if self.clean_text else text
-                abstract = Abstract(text if self.clean_text else CleanedText(text))
+                """
+                text = cleaned_text if self.clean_text else text
+                abstract = Abstract(cleaned_text)
                 category = Category(page)
                 entity = Entity(page)
 
@@ -324,7 +325,6 @@ if __name__ == '__main__':
     outputfile = sys.argv[2]
     we = WikipediaExtractor(
         file=inputfile,
-        min_infobox=2,
         clean_infobox=False,
         clean_text=True
     )
@@ -336,3 +336,4 @@ if __name__ == '__main__':
                 f.write(json.dumps(iteration.next()) + '\n')
             except StopIteration:
                 break
+    exit(0)
