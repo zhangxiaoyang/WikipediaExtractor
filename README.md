@@ -7,7 +7,7 @@ Usage
 ===
 
 ```
-python WikipediaExtractor.py [wikixmlfile] [dumpsfile]'
+python WikipediaExtractor.py [wikixmlfile] [dumpsfile]
 ```
 
 License
